@@ -11,8 +11,8 @@ jobs:
     steps:
       - name: Send Feishu Notification
         env:
-          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
-          FEISHU_SECRET: ${{ secrets.FEISHU_BOT_SIGNKEY }}
+          FEISHU_WEBHOOK: 'https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960'
+          FEISHU_SECRET: 'GIJFId8iWvEvpxmEfyLeed'
           TEST_TIMESTAMP: 1773296507 # 固定测试时间戳，可注释使用实时值
           # Giscus评论信息
           DISCUSSION_TITLE: ${{ github.event.discussion.title }}
