@@ -17,7 +17,7 @@ jobs:
           # 飞书文档明确：timestamp是UTC秒级，无需+8小时，否则会超出1小时有效期
           # TIMESTAMP=$(date +%s)
           TIMESTAMP=1773296507
-          echo -n "${FEISHU_SECRET}"
+          echo -n "${FEISHU_BOT_SIGNKEY}"
           SIGN1=$(printf "%s\n%s" "${TIMESTAMP}" "${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
           SIGN2=$(echo -e "${TIMESTAMP}\n${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
           SIGN3=$(cat /tmp/sign.txt | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
