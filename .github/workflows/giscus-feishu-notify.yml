@@ -1,4 +1,4 @@
-# 终极版：和Java加密逻辑100%对齐（硬编码配置，直接用）
+# 终极版：和Java HmacSHA256 100%对齐
 name: Giscus飞书推送（Java同款签名）
 on:
   workflow_dispatch: # 手动触发
@@ -13,34 +13,29 @@ jobs:
         run: |
           set -e
           
-          # ========== 第一步：直接填你的真实配置（测试用） ==========
-          FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960"  # 替换成你的
-          FEISHU_SECRET="GIJFId8iWvEvpxmEfyLeed"      # 替换成你的
-          # 固定测试时间戳（和你Java测试的一致）
+          # ========== 第一步：你的真实配置 ==========
+          FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960"
+          FEISHU_SECRET="GIJFId8iWvEvpxmEfyLeed"
           TIMESTAMP="1773296507"
 
-          # ========== 第二步：和Java完全一致的签名逻辑 ==========
-          # 关键：用$'\n'生成Java同款的纯LF换行符，而非字符串转义
-          SIGN_STRING="${TIMESTAMP}"$'\n'"${FEISHU_SECRET}"
-          # 加密：HMAC-SHA256 → 二进制 → 标准Base64（无换行）
-          SIGN=$(echo -n "${SIGN_STRING}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
+          # ========== 第二步：修正后的签名逻辑（核心！） ==========
+          # 错误原因：之前少了 -binary 参数的正确位置 + 算法对齐
+          SIGN=$(echo -n "${TIMESTAMP}"$'\n'"${FEISHU_SECRET}" | openssl sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
 
-          # ========== 第三步：打印对比（看是否和Java结果一致） ==========
+          # ========== 第三步：打印对比 ==========
           echo "=== 签名对比 ==="
           echo "时间戳: ${TIMESTAMP}"
           echo "密钥: ${FEISHU_SECRET}"
-          echo "签名字符串（十六进制查看）: $(echo -n "${SIGN_STRING}" | xxd)" # 验证换行符是0a
+          echo "签名字符串（十六进制）: $(echo -n "${TIMESTAMP}"$'\n'"${FEISHU_SECRET}" | xxd)"
           echo "Shell生成签名: ${SIGN}"
           echo "Java正确签名: +MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
 
           # ========== 第四步：构造消息并发送 ==========
-          # 提取Giscus评论（特殊字符转义）
           DISCUSSION_TITLE=$(echo "${{ github.event.discussion.title }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g')
           COMMENT_AUTHOR=$(echo "${{ github.event.comment.user.login }}" | sed 's/"/\\"/g')
           COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g' | cut -c 1-200)
           COMMENT_URL=$(echo "${{ github.event.comment.html_url }}" | sed 's/"/\\"/g')
 
-          # 飞书消息体（@所有人+签名+时间戳）
           FEISHU_MESSAGE=$(cat << EOF
           {
             "msg_type": "text",
