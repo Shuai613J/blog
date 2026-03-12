@@ -1,7 +1,6 @@
-# Giscus评论转发到飞书（@所有人+时区修正）
+# Giscus评论转发到飞书（@所有人+飞书官方签名规则）
 name: Giscus to Feishu Notify
 on:
-  # 只监听「新增讨论评论」事件
   discussion_comment:
     types: [created]
 
@@ -11,46 +10,52 @@ jobs:
     steps:
       - name: Send Feishu Notification
         env:
-          # 配置项（需先在仓库Secrets中添加）
-          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}  # 飞书机器人Webhook地址
-          FEISHU_SECRET: ${{ secrets.FEISHU_BOT_SIGNKEY }}   # 飞书机器人签名密钥
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_BOT_SIGNKEY }}
         run: |
-          # ========== 步骤1：修正时区，生成北京时间戳（核心）==========
-          # 获取UTC秒级时间戳 + 8小时（28800秒）= 北京时间戳
-          BEIJING_TIMESTAMP=$(date +%s)
-          # BEIJING_TIMESTAMP=$((UTC_TIMESTAMP + 28800))
+          # ========== 步骤1：生成飞书要求的「UTC秒级时间戳」（核心！无时区偏移）==========
+          # 飞书文档明确：timestamp是UTC秒级，无需+8小时，否则会超出1小时有效期
+          TIMESTAMP=$(date +%s)
           
-          # ========== 步骤2：计算飞书签名（严格按规则）==========
-          # 拼接签名字符串：timestamp + "\n" + secret
-          SIGN_STRING="${BEIJING_TIMESTAMP}\n${FEISHU_SECRET}"
-          # HMAC-SHA256加密 + Base64编码
-          SIGN=$(printf "%s\n%s" "${BEIJING_TIMESTAMP}" "${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64)
-
-          # ========== 步骤3：构造飞书消息（含@所有人）==========
-          # 提取Giscus评论核心信息
-          DISCUSSION_TITLE="${{ github.event.discussion.title }}"
-          COMMENT_AUTHOR="${{ github.event.comment.user.login }}"
-          COMMENT_CONTENT="${{ github.event.comment.body }}"
-          COMMENT_URL="${{ github.event.comment.html_url }}"
+          # ========== 步骤2：严格按飞书规则计算签名（3个关键修正）==========
+          # 修正1：用$'\n'生成真实换行（而非字符串转义）
+          # 修正2：base64 -w 0 禁用换行（飞书要求标准无换行Base64）
+          # 修正3：echo -n 确保无多余空格/换行
+          SIGN=$(echo -n "${TIMESTAMP}"$'\n'"${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
           
-          # 飞书@所有人固定语法：<at id="all">所有人</at>
+          # ========== 步骤3：构造消息体（处理特殊字符，避免JSON格式错误）==========
+          # 提取并转义评论内容中的特殊字符（双引号、换行），防止JSON解析失败
+          DISCUSSION_TITLE=$(echo "${{ github.event.discussion.title }}" | sed 's/"/\\"/g')
+          COMMENT_AUTHOR=$(echo "${{ github.event.comment.user.login }}" | sed 's/"/\\"/g')
+          COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g' | cut -c 1-200)
+          COMMENT_URL=$(echo "${{ github.event.comment.html_url }}" | sed 's/"/\\"/g')
+          
+          # 飞书@所有人语法 + 严格JSON格式（转义内部换行）
           FEISHU_MESSAGE=$(cat << EOF
           {
             "msg_type": "text",
             "content": {
-              "text": "<at id=\"all\">所有人</at> 📝 博客新评论\n页面：${DISCUSSION_TITLE}\n评论人：${COMMENT_AUTHOR}\n内容：${COMMENT_CONTENT:0:200}\n链接：${COMMENT_URL}"
+              "text": "<at id=\"all\">所有人</at> 📝 博客新评论\\n页面：${DISCUSSION_TITLE}\\n评论人：${COMMENT_AUTHOR}\\n内容：${COMMENT_CONTENT}\\n链接：${COMMENT_URL}"
             },
-            "timestamp": "${BEIJING_TIMESTAMP}",
+            "timestamp": "${TIMESTAMP}",
             "sign": "${SIGN}"
           }
           EOF
           )
           
-          # ========== 步骤4：发送到飞书Webhook ==========
-          curl -X POST "${FEISHU_WEBHOOK}" \
-            -H "Content-Type: application/json" \
-            -d "${FEISHU_MESSAGE}"
+          # ========== 步骤4：发送请求（带完整调试日志）==========
+          echo "=== 调试信息（核对飞书规则）==="
+          echo "UTC时间戳（飞书要求）：${TIMESTAMP}"
+          echo "签名字符串（原始）：${TIMESTAMP}"$'\n'"${FEISHU_SECRET}"
+          echo "生成的签名：${SIGN}"
+          echo "最终发送的JSON：${FEISHU_MESSAGE}"
           
-          # 打印日志（方便调试）
-          echo "北京时间戳：${BEIJING_TIMESTAMP}"
-          echo "飞书消息内容：${FEISHU_MESSAGE}"
+          # 发送并捕获完整响应（-v 打印详细请求/响应，便于定位）
+          echo "=== 发送请求到飞书 ==="
+          RESPONSE=$(curl -v -X POST "${FEISHU_WEBHOOK}" \
+            -H "Content-Type: application/json; charset=utf-8" \
+            -d "${FEISHU_MESSAGE}" 2>&1)
+          
+          # 打印飞书完整响应
+          echo "=== 飞书响应结果 ==="
+          echo "${RESPONSE}"
