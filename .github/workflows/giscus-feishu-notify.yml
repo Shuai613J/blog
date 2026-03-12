@@ -1,96 +1,61 @@
-# Giscus评论转发到飞书（@所有人+Node.js crypto签名+无文件写入）
-name: Giscus to Feishu Notify
+# 终极版：和Java加密逻辑100%对齐（硬编码配置，直接用）
+name: Giscus飞书推送（Java同款签名）
 on:
+  workflow_dispatch: # 手动触发
   discussion_comment:
     types: [created]
-  workflow_dispatch: # 手动触发测试
 
 jobs:
-  send-to-feishu:
+  send-feishu:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Feishu Notification
-        env:
-          FEISHU_WEBHOOK: 'https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960'
-          FEISHU_SECRET: 'GIJFId8iWvEvpxmEfyLeed'
-          TEST_TIMESTAMP: 1773296507 # 固定测试时间戳，可注释使用实时值
-          # Giscus评论信息
-          DISCUSSION_TITLE: ${{ github.event.discussion.title }}
-          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-          COMMENT_CONTENT: ${{ github.event.comment.body }}
-          COMMENT_URL: ${{ github.event.comment.html_url }}
+      - name: 推送评论到飞书
         run: |
           set -e
           
-          # ========== 步骤1：内联执行Node.js生成签名和消息体（无文件写入）==========
-          echo "=== 执行Node.js签名逻辑 ==="
-          RESULT=$(node -e "
-          const crypto = require('crypto');
-          
-          // 读取环境变量
-          const secret = process.env.FEISHU_SECRET;
-          const testTimestamp = process.env.TEST_TIMESTAMP;
-          
-          // 1. 生成UTC秒级时间戳
-          const timestamp = testTimestamp || Math.floor(Date.now() / 1000).toString();
-          
-          // 2. 飞书官方签名逻辑
-          const signString = \`\${timestamp}\\n\${secret}\`;
-          const sign = crypto.createHmac('sha256', secret)
-            .update(signString, 'utf8')
-            .digest('base64');
-          
-          // 3. 处理特殊字符
-          function escapeSpecialChars(str) {
-            if (!str) return '';
-            return str.replace(/\"/g, '\\\\\"').replace(/\\n/g, '\\\\n');
-          }
-          const discussionTitle = escapeSpecialChars(process.env.DISCUSSION_TITLE);
-          const commentAuthor = escapeSpecialChars(process.env.COMMENT_AUTHOR);
-          const commentContent = escapeSpecialChars(process.env.COMMENT_CONTENT).substring(0, 200);
-          const commentUrl = escapeSpecialChars(process.env.COMMENT_URL);
-          
-          // 4. 构造消息体
-          const feishuMessage = {
-            msg_type: 'text',
-            content: {
-              text: \`<at id=\"all\">所有人</at> 📝 博客新评论\\\\n页面：\${discussionTitle}\\\\n评论人：\${commentAuthor}\\\\n内容：\${commentContent}\\\\n链接：\${commentUrl}\`
+          # ========== 第一步：直接填你的真实配置（测试用） ==========
+          FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960"  # 替换成你的
+          FEISHU_SECRET="GIJFId8iWvEvpxmEfyLeed"      # 替换成你的
+          # 固定测试时间戳（和你Java测试的一致）
+          TIMESTAMP="1773296507"
+
+          # ========== 第二步：和Java完全一致的签名逻辑 ==========
+          # 关键：用$'\n'生成Java同款的纯LF换行符，而非字符串转义
+          SIGN_STRING="${TIMESTAMP}"$'\n'"${FEISHU_SECRET}"
+          # 加密：HMAC-SHA256 → 二进制 → 标准Base64（无换行）
+          SIGN=$(echo -n "${SIGN_STRING}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
+
+          # ========== 第三步：打印对比（看是否和Java结果一致） ==========
+          echo "=== 签名对比 ==="
+          echo "时间戳: ${TIMESTAMP}"
+          echo "密钥: ${FEISHU_SECRET}"
+          echo "签名字符串（十六进制查看）: $(echo -n "${SIGN_STRING}" | xxd)" # 验证换行符是0a
+          echo "Shell生成签名: ${SIGN}"
+          echo "Java正确签名: +MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
+
+          # ========== 第四步：构造消息并发送 ==========
+          # 提取Giscus评论（特殊字符转义）
+          DISCUSSION_TITLE=$(echo "${{ github.event.discussion.title }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g')
+          COMMENT_AUTHOR=$(echo "${{ github.event.comment.user.login }}" | sed 's/"/\\"/g')
+          COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g' | cut -c 1-200)
+          COMMENT_URL=$(echo "${{ github.event.comment.html_url }}" | sed 's/"/\\"/g')
+
+          # 飞书消息体（@所有人+签名+时间戳）
+          FEISHU_MESSAGE=$(cat << EOF
+          {
+            "msg_type": "text",
+            "content": {
+              "text": "<at id=\"all\">所有人</at> 📝 博客新评论\\n页面：${DISCUSSION_TITLE}\\n评论人：${COMMENT_AUTHOR}\\n内容：${COMMENT_CONTENT}\\n链接：${COMMENT_URL}"
             },
-            timestamp: timestamp,
-            sign: sign
-          };
-          
-          // 输出JSON结果（供Shell解析）
-          console.log(JSON.stringify({
-            timestamp: timestamp,
-            sign: sign,
-            signString: signString,
-            message: feishuMessage
-          }));
-          ")
-          
-          # ========== 步骤2：解析Node.js输出结果 ==========
-          TIMESTAMP=$(echo "$RESULT" | jq -r '.timestamp')
-          SIGN=$(echo "$RESULT" | jq -r '.sign')
-          SIGN_STRING=$(echo "$RESULT" | jq -r '.signString')
-          FEISHU_MESSAGE=$(echo "$RESULT" | jq -r '.message | tojson')
-          
-          # ========== 步骤3：打印调试信息 ==========
-          echo "=== 调试信息 ==="
-          echo "FEISHU_WEBHOOK：${FEISHU_WEBHOOK}"
-          echo "FEISHU_SECRET：${FEISHU_SECRET}"
-          echo "UTC时间戳：${TIMESTAMP}"
-          echo "签名字符串：${SIGN_STRING}"
-          echo "生成的签名：${SIGN}"
-          echo "正确签名：+MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
-          echo "飞书消息体：${FEISHU_MESSAGE}"
-          
-          # ========== 步骤4：发送请求到飞书 ==========
-          echo "=== 发送请求到飞书 ==="
+            "timestamp": "${TIMESTAMP}",
+            "sign": "${SIGN}"
+          }
+          EOF
+          )
+
+          # 发送请求
+          echo "=== 发送消息 ==="
           RESPONSE=$(curl -v -X POST "${FEISHU_WEBHOOK}" \
             -H "Content-Type: application/json; charset=utf-8" \
             -d "${FEISHU_MESSAGE}" 2>&1)
-          
-          # 打印完整响应
-          echo "=== 飞书响应结果 ==="
-          echo "${RESPONSE}"
+          echo "飞书响应: ${RESPONSE}"
