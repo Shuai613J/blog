@@ -17,8 +17,8 @@ jobs:
         run: |
           # ========== 步骤1：修正时区，生成北京时间戳（核心）==========
           # 获取UTC秒级时间戳 + 8小时（28800秒）= 北京时间戳
-          UTC_TIMESTAMP=$(date +%s)
-          BEIJING_TIMESTAMP=$((UTC_TIMESTAMP + 28800))
+          BEIJING_TIMESTAMP=$(date +%s)
+          # BEIJING_TIMESTAMP=$((UTC_TIMESTAMP + 28800))
           
           # ========== 步骤2：计算飞书签名（严格按规则）==========
           # 拼接签名字符串：timestamp + "\n" + secret
