@@ -1,7 +1,6 @@
-# 终极终极版：和你的Java逻辑完全一致（飞书非标准签名）
-name: Giscus飞书推送（100%调用成功）
+# Giscus评论推送飞书（纯自动生产版）
+name: Giscus飞书推送
 on:
-  workflow_dispatch: # 手动触发
   discussion_comment:
     types: [created]
 
@@ -9,37 +8,29 @@ jobs:
   send-feishu:
     runs-on: ubuntu-latest
     steps:
-      - name: 推送评论到飞书
+      - name: 推送评论内容到飞书
+        env:
+          # 从GitHub Secrets读取配置（需提前配置）
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          FEISHU_SECRET: ${{ secrets.FEISHU_BOT_SIGNKEY }}
         run: |
           set -e
           
-          # ========== 你的配置 ==========
-          FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960"
-          FEISHU_SECRET="GIJFId8iWvEvpxmEfyLeed"
-          # 用你测试成功的时间戳（或实时时间戳）
-          TIMESTAMP="1773296507"
-          # TIMESTAMP=$(date +%s) # 实时时间戳也可用
+          # 生成实时UTC时间戳（避免过期）
+          TIMESTAMP=$(date +%s)
 
-          # ========== 复刻你的Java签名逻辑（飞书非标准） ==========
-          # 1. 构造stringToSign
+          # 签名逻辑
           SIGN_STRING="${TIMESTAMP}"$'\n'"${FEISHU_SECRET}"
-          # 2. 复刻：把SIGN_STRING当密钥，空字节当摘要（和你Java一致）
-          # 步骤1：生成密钥（SIGN_STRING的字节）
           KEY=$(echo -n "${SIGN_STRING}" | xxd -p -c 256)
-          # 步骤2：用这个密钥计算空字节的HmacSHA256，再Base64
           SIGN=$(echo -n "" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"${KEY}" -binary | base64 -w 0)
 
-          # ========== 打印对比 ==========
-          echo "=== 签名对比 ==="
-          echo "你的Java签名: +MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
-          echo "Shell生成签名: ${SIGN}"
-
-          # ========== 构造消息并发送 ==========
+          # 处理评论内容特殊字符
           DISCUSSION_TITLE=$(echo "${{ github.event.discussion.title }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g')
           COMMENT_AUTHOR=$(echo "${{ github.event.comment.user.login }}" | sed 's/"/\\"/g')
           COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g' | cut -c 1-200)
           COMMENT_URL=$(echo "${{ github.event.comment.html_url }}" | sed 's/"/\\"/g')
 
+          # 构造消息体
           FEISHU_MESSAGE=$(cat << EOF
           {
             "msg_type": "text",
@@ -52,9 +43,7 @@ jobs:
           EOF
           )
 
-          # ========== 发送请求（100%成功） ==========
-          echo "=== 发送消息 ==="
-          RESPONSE=$(curl -v -X POST "${FEISHU_WEBHOOK}" \
+          # 静默发送请求
+          curl -s -X POST "${FEISHU_WEBHOOK}" \
             -H "Content-Type: application/json; charset=utf-8" \
-            -d "${FEISHU_MESSAGE}" 2>&1)
-          echo "飞书响应: ${RESPONSE}"
+            -d "${FEISHU_MESSAGE}" > /dev/null 2>&1
