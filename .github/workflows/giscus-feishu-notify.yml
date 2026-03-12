@@ -1,0 +1,56 @@
+# Giscus评论转发到飞书（@所有人+时区修正）
+name: Giscus to Feishu Notify
+on:
+  # 只监听「新增讨论评论」事件
+  discussion_comment:
+    types: [created]
+
+jobs:
+  send-to-feishu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Feishu Notification
+        env:
+          # 配置项（需先在仓库Secrets中添加）
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK_URL }}  # 飞书机器人Webhook地址
+          FEISHU_SECRET: ${{ secrets.FEISHU_BOT_SIGNKEY }}   # 飞书机器人签名密钥
+        run: |
+          # ========== 步骤1：修正时区，生成北京时间戳（核心）==========
+          # 获取UTC秒级时间戳 + 8小时（28800秒）= 北京时间戳
+          UTC_TIMESTAMP=$(date +%s)
+          BEIJING_TIMESTAMP=$((UTC_TIMESTAMP + 28800))
+          
+          # ========== 步骤2：计算飞书签名（严格按规则）==========
+          # 拼接签名字符串：timestamp + "\n" + secret
+          SIGN_STRING="${BEIJING_TIMESTAMP}\n${FEISHU_SECRET}"
+          # HMAC-SHA256加密 + Base64编码
+          SIGN=$(echo -n "${SIGN_STRING}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64)
+          
+          # ========== 步骤3：构造飞书消息（含@所有人）==========
+          # 提取Giscus评论核心信息
+          DISCUSSION_TITLE="${{ github.event.discussion.title }}"
+          COMMENT_AUTHOR="${{ github.event.comment.user.login }}"
+          COMMENT_CONTENT="${{ github.event.comment.body }}"
+          COMMENT_URL="${{ github.event.comment.html_url }}"
+          
+          # 飞书@所有人固定语法：<at id="all">所有人</at>
+          FEISHU_MESSAGE=$(cat << EOF
+          {
+            "msg_type": "text",
+            "content": {
+              "text": "<at id=\"all\">所有人</at> 📝 博客新评论\n页面：${DISCUSSION_TITLE}\n评论人：${COMMENT_AUTHOR}\n内容：${COMMENT_CONTENT:0:200}\n链接：${COMMENT_URL}"
+            },
+            "timestamp": "${BEIJING_TIMESTAMP}",
+            "sign": "${SIGN}"
+          }
+          EOF
+          )
+          
+          # ========== 步骤4：发送到飞书Webhook ==========
+          curl -X POST "${FEISHU_WEBHOOK}" \
+            -H "Content-Type: application/json" \
+            -d "${FEISHU_MESSAGE}"
+          
+          # 打印日志（方便调试）
+          echo "北京时间戳：${BEIJING_TIMESTAMP}"
+          echo "飞书消息内容：${FEISHU_MESSAGE}"
