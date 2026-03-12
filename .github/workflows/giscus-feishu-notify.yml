@@ -15,7 +15,17 @@ jobs:
         run: |
           # ========== 步骤1：生成飞书要求的「UTC秒级时间戳」（核心！无时区偏移）==========
           # 飞书文档明确：timestamp是UTC秒级，无需+8小时，否则会超出1小时有效期
-          TIMESTAMP=$(date +%s)
+          # TIMESTAMP=$(date +%s)
+          TIMESTAMP=1773296507
+
+          SIGN1=$(printf "%s\n%s" "${TIMESTAMP}" "${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
+          SIGN2=$(echo -e "${TIMESTAMP}\n${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
+          SIGN3=$(cat /tmp/sign.txt | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
+          echo "方式1签名：${SIGN1}"
+          echo "方式2签名：${SIGN2}"
+          echo "方式3签名：${SIGN3}"
+          echo "正确签名：+MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
+          
           
           # ========== 步骤2：严格按飞书规则计算签名（3个关键修正）==========
           # 修正1：用$'\n'生成真实换行（而非字符串转义）
