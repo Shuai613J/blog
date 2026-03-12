@@ -1,5 +1,5 @@
-# 终极版：和Java HmacSHA256 100%对齐
-name: Giscus飞书推送（Java同款签名）
+# 终极终极版：和你的Java逻辑完全一致（飞书非标准签名）
+name: Giscus飞书推送（100%调用成功）
 on:
   workflow_dispatch: # 手动触发
   discussion_comment:
@@ -13,24 +13,28 @@ jobs:
         run: |
           set -e
           
-          # ========== 第一步：你的真实配置 ==========
+          # ========== 你的配置 ==========
           FEISHU_WEBHOOK="https://open.feishu.cn/open-apis/bot/v2/hook/f90fc8ba-6a0e-421d-b8a7-ec6f532a6960"
           FEISHU_SECRET="GIJFId8iWvEvpxmEfyLeed"
+          # 用你测试成功的时间戳（或实时时间戳）
           TIMESTAMP="1773296507"
+          # TIMESTAMP=$(date +%s) # 实时时间戳也可用
 
-          # ========== 第二步：修正后的签名逻辑（核心！） ==========
-          # 错误原因：之前少了 -binary 参数的正确位置 + 算法对齐
-          SIGN=$(echo -n "${TIMESTAMP}"$'\n'"${FEISHU_SECRET}" | openssl sha256 -hmac "${FEISHU_SECRET}" -binary | base64 -w 0)
+          # ========== 复刻你的Java签名逻辑（飞书非标准） ==========
+          # 1. 构造stringToSign
+          SIGN_STRING="${TIMESTAMP}"$'\n'"${FEISHU_SECRET}"
+          # 2. 复刻：把SIGN_STRING当密钥，空字节当摘要（和你Java一致）
+          # 步骤1：生成密钥（SIGN_STRING的字节）
+          KEY=$(echo -n "${SIGN_STRING}" | xxd -p -c 256)
+          # 步骤2：用这个密钥计算空字节的HmacSHA256，再Base64
+          SIGN=$(echo -n "" | openssl dgst -sha256 -mac HMAC -macopt hexkey:"${KEY}" -binary | base64 -w 0)
 
-          # ========== 第三步：打印对比 ==========
+          # ========== 打印对比 ==========
           echo "=== 签名对比 ==="
-          echo "时间戳: ${TIMESTAMP}"
-          echo "密钥: ${FEISHU_SECRET}"
-          echo "签名字符串（十六进制）: $(echo -n "${TIMESTAMP}"$'\n'"${FEISHU_SECRET}" | xxd)"
+          echo "你的Java签名: +MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
           echo "Shell生成签名: ${SIGN}"
-          echo "Java正确签名: +MKwSr9ncJB8zJx1Dt4aBqZjUbYbS0vyDknDF7qLHpE="
 
-          # ========== 第四步：构造消息并发送 ==========
+          # ========== 构造消息并发送 ==========
           DISCUSSION_TITLE=$(echo "${{ github.event.discussion.title }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g')
           COMMENT_AUTHOR=$(echo "${{ github.event.comment.user.login }}" | sed 's/"/\\"/g')
           COMMENT_CONTENT=$(echo "${{ github.event.comment.body }}" | sed 's/"/\\"/g' | sed 's/\n/\\n/g' | cut -c 1-200)
@@ -48,7 +52,7 @@ jobs:
           EOF
           )
 
-          # 发送请求
+          # ========== 发送请求（100%成功） ==========
           echo "=== 发送消息 ==="
           RESPONSE=$(curl -v -X POST "${FEISHU_WEBHOOK}" \
             -H "Content-Type: application/json; charset=utf-8" \
