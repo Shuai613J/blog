@@ -35,7 +35,7 @@ jobs:
           {
             "msg_type": "text",
             "content": {
-              "text": "<at id=\"all\">所有人</at> 📝 博客新评论\\n页面：${DISCUSSION_TITLE}\\n评论人：${COMMENT_AUTHOR}\\n内容：${COMMENT_CONTENT}\\n链接：${COMMENT_URL}"
+              "text": "<at user_id=\"all\"></at>\n📝 博客新评论\\n页面：${DISCUSSION_TITLE}\\n评论人：${COMMENT_AUTHOR}\\n内容：${COMMENT_CONTENT}\\n链接：${COMMENT_URL}"
             },
             "timestamp": "${TIMESTAMP}",
             "sign": "${SIGN}"
