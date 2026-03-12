@@ -24,8 +24,8 @@ jobs:
           # 拼接签名字符串：timestamp + "\n" + secret
           SIGN_STRING="${BEIJING_TIMESTAMP}\n${FEISHU_SECRET}"
           # HMAC-SHA256加密 + Base64编码
-          SIGN=$(printf "%s\n%s" "${TIMESTAMP}" "${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64)
-          
+          SIGN=$(printf "%s\n%s" "${BEIJING_TIMESTAMP}" "${FEISHU_SECRET}" | openssl dgst -sha256 -hmac "${FEISHU_SECRET}" -binary | base64)
+
           # ========== 步骤3：构造飞书消息（含@所有人）==========
           # 提取Giscus评论核心信息
           DISCUSSION_TITLE="${{ github.event.discussion.title }}"
